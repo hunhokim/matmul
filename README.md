@@ -8,72 +8,81 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-## Runtime experiments
+## Run
 
-The defaults are 100,000 elements, block sizes 32 through 1024 in steps of 32,
-and 1,000 timed launches per configuration. No rebuild is needed to change them:
-
-```bash
-# Threads per block vs. latency at a fixed element count
-./build/vector_add --n 100000 --threads 32,64,128,256,512,1024
-
-# Element count vs. latency at a fixed block size
-./build/vector_add --n 10,100,1000,10000,20000,30000,40000,50000,60000,70000,80000,90000,100000 --threads 256
-
-# All combinations, with more launches per measurement and CSV output
-mkdir -p results
-./build/vector_add --n 10000,100000,1000000 --threads 64,128,256 --iterations 10000 --csv > results/experiment.csv
-
-./build/vector_add --help
-```
-
-`--n` and `--threads` accept one positive integer or a comma-separated list.
-`--iterations` accepts one positive integer. Block and grid sizes are checked
-against the active GPU's limits. Each configuration gets one untimed warm-up
-launch. Reported latency is the CUDA-event batch time divided by the number of
-launches; it excludes allocation and memory copies and can include launch gaps.
-Lists run in the supplied order, with element count as the outer loop.
-The plotting script accepts the same runtime settings and can plot either axis.
-When both settings are lists, each fixed value of the other setting gets its own curve.
-
-## Timing plot
-
-`./build/vector_add` prints a terminal chart; `--csv` prints machine-readable timings.
-To plot the mean with sample-standard-deviation error bars over 30 repeated sweeps:
+Pass the element count and threads per block as positive integers:
 
 ```bash
-uv venv .venv
-uv pip install --python .venv/bin/python matplotlib
-# Threads/block vs. latency, holding n = 100000
-MPLCONFIGDIR=.cache/matplotlib .venv/bin/python plot_timings.py --axis threads --iterations 1000 --samples 30 --output-dir results/threads_sweep
-
-# Element count vs. latency, holding threads/block = 256
-MPLCONFIGDIR=.cache/matplotlib .venv/bin/python plot_timings.py --axis n --iterations 1000 --samples 30 --output-dir results/elements_sweep
+./build/vector_add 100000 256
 ```
 
-Each output directory contains raw `samples.csv`, `summary.csv`, and PNG/SVG
-plots named `block_size_timings` or `element_count_timings`. Element-count plots
-use a linear x-axis and default to 10, 100, and 1,000 elements, followed by
-10,000 through 100,000 in steps of 10,000, with 256 threads per block. Override the inputs with `--n`.
-The commands above use 30 batch samples per configuration and 1,000
-launches per sample; the script defaults to 1,000 launches. Customize sweeps
-with `--n`, `--threads`, `--iterations`, and `--samples` (`--repeats` is an alias).
-Each sample times the entire batch with one CUDA event pair and divides by the
-iteration count. Individual iterations are not timed.
+The program warms up vector addition, reads a separate scratch buffer sized at
+four times the GPU's L2 cache, then measures one vector-add launch with CUDA events
+and checks the result. It prints the elapsed microseconds to stdout; errors go to
+stderr. Allocation, memory transfers, warm-up, cache eviction, and result checking
+are outside the timed region. Scratch-buffer eviction is a practical heuristic,
+not a guaranteed hardware cache flush. Small kernels remain sensitive to event
+timing resolution and scheduling overhead.
+Invalid launch configurations are reported by CUDA.
+Eviction reads the scratch buffer without modifying it to avoid leaving dirty
+scratch cache lines that could add writeback traffic during the measured launch.
 
-Error bars show sample standard deviation between batch averages, not individual
-kernel latencies or confidence intervals. Timings exclude memory copies but can
-include gaps between launches. Sweeps use the supplied order, so clock or
-temperature drift may affect comparisons.
+## Statistics and plots
 
-Replot saved repeated samples without accessing the GPU (choose the matching axis):
+The two plotting scripts share measurement and plotting helpers in
+`scripts/timing_common.py`. Each runs the program once per configuration per sample and
+calculates means and, when multiple samples are collected, sample standard deviations:
 
 ```bash
-MPLCONFIGDIR=.cache/matplotlib .venv/bin/python plot_timings.py --axis n --input results/elements_sweep/samples.csv --output-dir results/elements_sweep
+export UV_CACHE_DIR=.cache/uv
+uv sync --locked
+MPLCONFIGDIR=.cache/matplotlib uv run --locked python scripts/plot_block_sizes.py --output-dir results/threads_sweep
+MPLCONFIGDIR=.cache/matplotlib uv run --locked python scripts/plot_element_counts.py --output-dir results/elements_sweep
 ```
 
-`--input` uses the configurations stored in the CSV; collection options such as
-`--n`, `--threads`, and `--iterations` only apply when collecting new samples.
+Python is pinned in `.python-version`; `uv.lock` pins all Python dependencies.
+Run `uv sync --locked` after cloning to recreate the environment. To intentionally
+update dependencies, run `uv lock --upgrade` and commit the updated lockfile.
+
+The default is 10 samples per configuration. The block-size sweep uses
+64, 128, 256, 512, and 1024 threads per block at 100,000 elements. The element-count
+sweep uses 128 threads per block and powers of two from 2^10 (1,024) through
+2^25 (33,554,432) elements. Element-count plots use a base-2 logarithmic x-axis;
+the latency plot also uses a logarithmic y-axis (log-log).
+
+Each output directory contains `samples.csv`, `summary.csv`, and separate latency
+and effective memory bandwidth PNG plots (`*_timings.png` and `*_bandwidth.png`).
+Use `--samples` to set the number of independent program runs. The scripts print
+the average and sample standard deviation for each configuration.
+For compatibility with saved CSVs, new measurements retain `timing_iterations`
+(always 1) and `average_us` (the single measured launch time). Older batch timing
+CSVs can still be replotted. Each sample starts a fresh process and CUDA context.
+Error bars show sample standard deviation across runs, not confidence intervals.
+With `--samples 1`,
+error bars are omitted and standard deviation fields in `summary.csv` are blank.
+
+Effective memory bandwidth counts two float32 reads and one float32 write per
+element: `bandwidth_GB/s = 12 * n / (elapsed_us * 1000)` (decimal GB/s).
+The scripts calculate bandwidth for each sample, then report its mean and sample
+standard deviation in `mean_bandwidth_gbps` and `std_bandwidth_gbps` in `summary.csv`.
+Bandwidth error bars use these transformed samples. This measures useful bytes
+per elapsed time; it does not measure physical DRAM traffic or guarantee peak
+DRAM bandwidth, particularly for small inputs or cached historical measurements.
+
+Bandwidth plots include a dashed theoretical VRAM bandwidth line at 112 GB/s for
+this machine's GTX 1050 Ti ([manufacturer specifications](https://www.pny.com/File%20Library/Company/Support/Product%20Brochures/GeForce%20Graphics/English/PNY-NVIDIA-GeForce-GTX-1050Ti-4GB.pdf)).
+Use `--peak-bandwidth <GB/s>` for a different GPU or memory clock configuration;
+the reference value is configured, not automatically detected.
+
+New sample CSVs record `cache_mode` as `eviction`. Output writes can still remain
+buffered in L2 during a short launch; the large-input plateau is more useful for
+estimating sustained DRAM bandwidth.
+
+Replot saved samples without accessing the GPU:
+
+```bash
+MPLCONFIGDIR=.cache/matplotlib uv run --locked python scripts/plot_element_counts.py --input results/elements_sweep/samples.csv --output-dir results/elements_sweep
+```
 
 ## IDE
 
