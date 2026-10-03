@@ -21,6 +21,7 @@ and 1,000 timed launches per configuration. No rebuild is needed to change them:
 ./build/vector_add --n 10,100,1000,10000,20000,30000,40000,50000,60000,70000,80000,90000,100000 --threads 256
 
 # All combinations, with more launches per measurement and CSV output
+mkdir -p results
 ./build/vector_add --n 10000,100000,1000000 --threads 64,128,256 --iterations 10000 --csv > results/experiment.csv
 
 ./build/vector_add --help
