@@ -1,4 +1,5 @@
 /build/
+/results/
 /compile_commands.json
 /.cache/
 /.venv/
