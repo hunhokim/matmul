@@ -9,4 +9,10 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_executable(vector_add src/00_vector_add.cu)
+add_executable(vector_add src/vector_add/00_vector_add.cu)
+add_executable(vector_add_float4 src/vector_add/01_vector_add_float4.cu)
+
+foreach(factor IN ITEMS 2 4 8)
+    add_executable(vector_add_unrolled${factor} src/vector_add/02_vector_add_unrolled.cu)
+    target_compile_definitions(vector_add_unrolled${factor} PRIVATE ELEMENTS_PER_THREAD=${factor})
+endforeach()

@@ -16,6 +16,51 @@ Pass the element count and threads per block as positive integers:
 ./build/vector_add 100000 256
 ```
 
+The baseline is `src/vector_add/00_vector_add.cu`. A separate vectorized
+implementation in `src/vector_add/01_vector_add_float4.cu` processes four elements
+per thread using aligned `float4` loads/stores and handles the remaining 1–3
+elements with scalar accesses:
+
+```bash
+./build/vector_add_float4 100000 256
+```
+
+Both executables use the same warm-up, cache eviction, timing, and correctness
+checks. For `float4`, the grid contains `ceil(ceil(n / 4) / threads)` blocks.
+Use `--binary build/vector_add_float4` with either plotting script to benchmark it.
+
+`src/vector_add/02_vector_add_unrolled.cu` provides scalar unrolled variants with
+2, 4, or 8 elements per thread, selected at compile time by CMake:
+
+```bash
+./build/vector_add_unrolled2 100000 256
+./build/vector_add_unrolled4 100000 256
+./build/vector_add_unrolled8 100000 256
+```
+
+Each block covers `threads * elements_per_thread` elements. Within each unrolled
+iteration, adjacent threads access adjacent elements; bounds checks cover partial
+blocks. The kernel calculates all per-thread sums before storing them, exposing
+independent work while using more registers. These executables retain the baseline
+measurement and correctness checks and support the plotting scripts' `--binary`
+option.
+
+To compare individual launches with nvprof:
+
+```bash
+nvprof --print-gpu-trace ./build/vector_add 100000 256
+nvprof --print-gpu-trace ./build/vector_add_float4 100000 256
+nvprof --print-gpu-trace ./build/vector_add_unrolled4 100000 256
+```
+
+Compare the **second** vector-add invocation, after cache eviction; the first is
+the warm-up. Collect hardware metrics separately, if driver permissions allow:
+
+```bash
+nvprof --kernels '::vector_add:2' --metrics inst_executed_global_loads,inst_executed_global_stores ./build/vector_add 100000 256
+nvprof --kernels '::vector_add_float4:2' --metrics inst_executed_global_loads,inst_executed_global_stores ./build/vector_add_float4 100000 256
+```
+
 The program warms up vector addition, reads a separate scratch buffer sized at
 four times the GPU's L2 cache, then measures one vector-add launch with CUDA events
 and checks the result. It prints the elapsed microseconds to stdout; errors go to
