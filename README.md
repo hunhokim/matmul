@@ -129,6 +129,47 @@ Replot saved samples without accessing the GPU:
 MPLCONFIGDIR=.cache/matplotlib uv run --locked python scripts/plot_element_counts.py --input results/elements_sweep/samples.csv --output-dir results/elements_sweep
 ```
 
+## Naive matrix multiplication block sweep
+
+The matmul example multiplies fixed 4096×4096 FP32 matrices. Pass the block's
+x and y dimensions as two positive integers (default: `32 32`):
+
+```bash
+./build/matmul_fat_matrices_00_naive 32 8
+```
+
+CUDA reports an error if the block exceeds the GPU's launch limits.
+Each run performs one untimed warm-up and one timed kernel launch,
+then prints the matrix and block dimensions, elapsed milliseconds, and TFLOPS
+(`2*M*N*K / (elapsed_ms * 1e9)`). Inputs are initialized to zero directly on the
+GPU. Allocation and initialization are outside the timing.
+
+Sweep block shapes and plot their mean latency and FP32 throughput:
+
+```bash
+MPLCONFIGDIR=.cache/matplotlib uv run --locked python scripts/plot_matmul_block_sizes.py
+MPLCONFIGDIR=.cache/matplotlib uv run --locked python scripts/plot_matmul_block_sizes.py --blocks 8x32,16x16,32x8 --samples 5 --output-dir results/matmul_256_threads
+```
+
+The default sweep covers nine shapes with 64–1024 threads and three independent
+program runs per shape. Shapes are tested in a reproducibly shuffled order each
+round to reduce ordering bias. Comparing shapes with the same total thread count
+helps reveal the effect of arranging threads along matrix rows and columns.
+This benchmark retains natural cache behavior; it does not explicitly evict caches.
+
+Results go to `results/matmul_blocks/`: `samples.csv`, `summary.csv`,
+`block_shape_timings.png`, and `block_shape_tflops.png`. Error bars show ±1 sample
+standard deviation across runs, not confidence intervals. TFLOPS are calculated
+per sample from elapsed time before averaging. With `--samples 1`, standard
+deviations are left blank and error bars are omitted. The fastest measured mean
+is printed; close results may require more samples to distinguish reliably.
+
+Replot saved data without running GPU work:
+
+```bash
+MPLCONFIGDIR=.cache/matplotlib uv run --locked python scripts/plot_matmul_block_sizes.py --input results/matmul_blocks/samples.csv --output-dir results/matmul_blocks_replot
+```
+
 ## IDE
 
 The root `compile_commands.json` symlink provides compiler settings.
