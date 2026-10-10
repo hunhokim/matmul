@@ -16,3 +16,5 @@ foreach(factor IN ITEMS 2 4 8)
     add_executable(vector_add_unrolled${factor} src/vector_add/02_vector_add_unrolled.cu)
     target_compile_definitions(vector_add_unrolled${factor} PRIVATE ELEMENTS_PER_THREAD=${factor})
 endforeach()
+
+add_executable(matmul_fat_matrices_00_naive src/matmul/fat_matrices/00_naive.cu)
