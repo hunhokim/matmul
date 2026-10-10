@@ -2,4 +2,6 @@ If:
   PathMatch: .*\.cu
 CompileFlags:
   # CMake records nvcc flags, but clangd parses with Clang's CUDA frontend.
-  Remove: [-forward-unknown-to-host-compiler, --generate-code=*]
+  Remove: [-forward-unknown-to-host-compiler, --generate-code=*, -std=*]
+  # Match CMake, including when clangd falls back without a compile command.
+  Add: [-std=c++20]

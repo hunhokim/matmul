@@ -133,4 +133,15 @@ MPLCONFIGDIR=.cache/matplotlib uv run --locked python scripts/plot_element_count
 
 The root `compile_commands.json` symlink provides compiler settings.
 [`.clangd`](.clangd) filters NVCC-only flags for clangd; restart the language
-server if stale errors remain.
+server if stale errors remain. It also explicitly enables C++20 for CUDA files
+so `std::source_location` is available when clangd uses a fallback compile command.
+
+CMake's cache and compile database contain absolute paths. After moving or
+renaming the project directory, regenerate them (requires CMake 3.24+):
+
+```bash
+cmake --fresh -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+```
+
+Then restart clangd or reopen the editor to clear stale diagnostics.
